@@ -421,6 +421,20 @@ In OBS studio you just add a Media Source, uncheck *Local File* and fill the *In
 
 I've also tested MPEGTS without audio and I was able to get something like 100 ms delay with this command:
 
-     gst-launch-1.0 v4l2src device=/dev/video0 io-mode=4 ! "video/x-raw,framerate=60/1,format=UYVY" ! v4l2h264enc output-io-mode=5 capture-io-mode=4 extra-controls="controls,h264_profile=4,h264_level=10,video_b_frames=0,video_bitrate=25000000 ;" ! "video/x-h264,profile=high,level=(string)4.1" ! h264parse ! mpegtsmux ! rtpmp2tpay ! udpsink host=192.168.0.2 port=5000 
+     gst-launch-1.0 v4l2src device=/dev/video0 io-mode=4 ! "video/x-raw,framerate=60/1,format=UYVY" ! v4l2h264enc output-io-mode=4 capture-io-mode=4 extra-controls="controls,h264_profile=4,h264_level=10,video_b_frames=0,video_bitrate=25000000 ;" ! "video/x-h264,profile=high,level=(string)4.1" ! h264parse ! mpegtsmux ! udpsink host=192.168.0.2 port=5000 
 
 I'm still digging to find why I can't get this 100 ms delay when I add the sound in the streaming. If you have any clue please let me know.
+
+## Streaming with MPEGTS with low latency
+
+Up to now the only solution I have found is to use two separate streams for video and audio.
+
+The video stream
+
+     gst-launch-1.0 v4l2src device=/dev/video0 io-mode=4 do-timestamp=true ! "video/x-raw,framerate=60/1,format=UYVY" ! v4l2h264enc output-io-mode=4 capture-io-mode=4 extra-controls="controls,h264_profile=4,h264_level=10,video_b_frames=0,video_bitrate=25000000 ;" ! "video/x-h264,profile=high,level=(string)4.1" ! h264parse ! mpegtsmux ! udpsink host=192.168.0.2 port=5000
+
+The audio stream
+
+     gst-launch-1.0 alsasrc device=hw:tc358743 ! audio/x-raw,rate=48000,channels=2 ! audioconvert ! avenc_aac bitrate=48000 ! aacparse !  mpegtsmux ! udpsink host=192.168.0.2 port=5001
+
+Two media sources must be configured in OBS, video is `udp://192.168.0.2:5000` and audio is `udp://192.168.0.2:5001`.
