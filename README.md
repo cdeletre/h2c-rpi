@@ -10,9 +10,9 @@ With the hope of getting it work with the sound I've started to build my recordi
 Of course if you own a HDMI to CSI board with the audio already working you can use this guide and just skip the hardware patching part.
 
 ## Known limitations
-With a 2 lines CSI, considering you're using the UYVY mode, you can capture the following HDMI resolutions
-- 1080p50
-- 720p60
+With a 2 lines CSI you can capture the following HDMI resolutions
+- 1080p50 (UYVY mode)
+- 720p60 (RGB3 mode)
 
 So far I was able to record 1080p30 and 720p60 with success. I haven't played yet a lot with 1080p50 so I cannot say.
 
@@ -299,9 +299,22 @@ First you have to load the EDID data with `v4l2-ctl` tool
 
 ### Changing Pixel format
 
-Then you'll switch the mode UYVY as the default mode BGR3 limit the maximum capture resolution. It may works with BGR3 for 720p resolution but I haven't deep tested what fps will be OK.
+RGB3 pixel format seems fine up to 720p60. If you're going for more, like 1080p50 you'll need to switch the mode to UYVY:
 
      pi@hdmipi2:~ $ v4l2-ctl -v pixelformat=UYVY
+
+Switch back to RGB3 with this command if needed
+
+     pi@hdmipi2:~ $ v4l2-ctl -v pixelformat=RGB3
+
+Supported mode can be listed with this command
+
+     pi@hdmipi2:~ $ v4l2-ctl --list-formats
+     ioctl: VIDIOC_ENUM_FMT
+          Type: Video Capture
+
+          [0]: 'RGB3' (24-bit RGB 8-8-8)
+          [1]: 'UYVY' (UYVY 4:2:2)
 
 ### Controlling screen resolution
 
@@ -415,7 +428,7 @@ I was not happy to use VLC in OBS studio to receive the stream so I dig a little
 
 This is done with this command
 
-     gst-launch-1.0 v4l2src device=/dev/video0 io-mode=4 ! "video/x-raw,framerate=60/1,format=UYVY" ! v4l2h264enc output-io-mode=5 capture-io-mode=4 extra-controls="controls,h264_profile=4,h264_level=10,video_b_frames=0,video_bitrate=25000000 ;" ! "video/x-h264,profile=high,level=(string)4.1" ! h264parse ! queue ! mpegtsmux name=mux ! rtpmp2tpay config-interval=1 ! udpsink host=192.168.0.2 port=5000 alsasrc device=hw:tc358743 ! audio/x-raw,rate=48000,channels=2 ! queue ! audioconvert ! avenc_aac bitrate=48000 ! aacparse ! mux.
+     gst-launch-1.0 v4l2src device=/dev/video0 io-mode=4 ! "video/x-raw,framerate=60/1,format=UYVY" ! v4l2h264enc output-io-mode=5 capture-io-mode=4 extra-controls="controls,h264_profile=4,h264_level=10,video_b_frames=0,video_bitrate=25000000 ;" ! "video/x-h264,profile=high,level=(string)4.1" ! h264parse ! mpegtsmux name=mux ! udpsink host=192.168.0.2 port=5000 alsasrc device=hw:tc358743 ! audio/x-raw,rate=48000,channels=2 ! audioconvert ! avenc_aac bitrate=48000 ! aacparse ! mux.
 
 In OBS studio you just add a Media Source, uncheck *Local File* and fill the *Input* field with `udp://192.168.0.2:5000`. You can set network buffering to zero. With this setup I think I just got a little bit than 1000 ms delay but I haven't checked deeply.
 
@@ -431,10 +444,10 @@ Up to now the only solution I have found is to use two separate streams for vide
 
 The video stream
 
-     gst-launch-1.0 v4l2src device=/dev/video0 io-mode=4 do-timestamp=true ! "video/x-raw,framerate=60/1,format=UYVY" ! v4l2h264enc output-io-mode=4 capture-io-mode=4 extra-controls="controls,h264_profile=4,h264_level=10,video_b_frames=0,video_bitrate=25000000 ;" ! "video/x-h264,profile=high,level=(string)4.1" ! h264parse ! mpegtsmux ! udpsink host=192.168.0.2 port=5000
+     gst-launch-1.0 v4l2src device=/dev/video0 io-mode=4 do-timestamp=true ! "video/x-raw,framerate=60/1,format=UYVY" ! v4l2h264enc output-io-mode=4 capture-io-mode=4 extra-controls="controls,h264_profile=4,h264_level=10,video_b_frames=0,video_bitrate=25000000 ;" ! "video/x-h264,profile=high,level=(string)4.1" ! h264parse ! mpegtsmux ! rtpmp2tpay ! udpsink host=192.168.0.2 port=5000
 
 The audio stream
 
-     gst-launch-1.0 alsasrc device=hw:tc358743 ! audio/x-raw,rate=48000,channels=2 ! audioconvert ! avenc_aac bitrate=48000 ! aacparse !  mpegtsmux ! udpsink host=192.168.0.2 port=5001
+     gst-launch-1.0 alsasrc device=hw:tc358743 ! audio/x-raw,rate=48000,channels=2 ! audioconvert ! avenc_aac bitrate=48000 ! aacparse !  mpegtsmux ! rtpmp2tpay ! udpsink host=192.168.0.2 port=5001
 
-Two media sources must be configured in OBS, video is `udp://192.168.0.2:5000` and audio is `udp://192.168.0.2:5001`.
+Two media sources must be configured in OBS, video is `udp://192.168.0.2:5000` and audio is `udp://192.168.0.2:5001`. You may remove `rtpmp2tpay` processing but it looks like the rtp encapsulation helps to keep the live streaming sync.
